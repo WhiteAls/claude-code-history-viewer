@@ -79,10 +79,18 @@ async function findSessionAcrossProjects(
   uuid: string,
   projects: ClaudeProject[],
 ): Promise<{ project: ClaudeProject; session: ClaudeSession } | null> {
+  // Hoisted: excludeSidechain doesn't change during the scan, so read once.
+  // Mirror of the same pattern in GlobalSearchModal.tsx.
+  const { excludeSidechain } = useAppStore.getState();
+
   for (const project of projects) {
+    // Race guard: if the user has manually picked a session while we were
+    // scanning, abort the scan so the CLI hint doesn't clobber their choice.
+    if (useAppStore.getState().selectedSession) {
+      return null;
+    }
     try {
       const providerId = project.provider ?? "claude";
-      const { excludeSidechain } = useAppStore.getState();
       const projectSessions = await api<ClaudeSession[]>(
         providerId !== "claude" ? "load_provider_sessions" : "load_project_sessions",
         providerId !== "claude"
@@ -121,10 +129,20 @@ export async function preloadSessionFromCli(
 
   const match = await findSessionAcrossProjects(hint.value, deps.projects);
   if (!match) {
+    // Check the race guard explicitly: the scan returns null either because
+    // no session matched or because the user already selected one mid-scan.
+    // Only show the "not found" toast in the former case.
+    if (useAppStore.getState().selectedSession) {
+      return { handled: true, matched: false };
+    }
     toast.error(deps.t("globalSearch.sessionNotFound", "Session not found"));
     return { handled: true, matched: false };
   }
 
+  // Final race guard before committing the hint-driven selection.
+  if (useAppStore.getState().selectedSession) {
+    return { handled: true, matched: false };
+  }
   await deps.selectProject(match.project);
   await deps.selectSession(match.session);
   return { handled: true, matched: true };

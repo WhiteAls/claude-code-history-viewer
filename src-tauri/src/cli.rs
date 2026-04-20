@@ -11,6 +11,7 @@
 //! extends the parser to accept paths, sesslog folder names, and free-text
 //! titles.
 
+use crate::cli_args::extract_flag_value;
 use serde::Serialize;
 use tauri::State;
 
@@ -62,29 +63,6 @@ pub fn parse_session_hint(args: &[String]) -> Option<SessionHint> {
     } else {
         None
     }
-}
-
-/// Extract the value of `--flag=value` or `--flag value` from argv.
-///
-/// A flag without a following value (or followed by another flag starting
-/// with `--`) yields `None`.
-fn extract_flag_value(args: &[String], flag: &str) -> Option<String> {
-    let prefix = format!("{flag}=");
-    for (idx, arg) in args.iter().enumerate() {
-        if let Some(after) = arg.strip_prefix(&prefix) {
-            if after.is_empty() {
-                return None;
-            }
-            return Some(after.to_string());
-        }
-        if arg == flag {
-            return args
-                .get(idx + 1)
-                .filter(|next| !next.starts_with("--"))
-                .cloned();
-        }
-    }
-    None
 }
 
 /// A UUID is 36 chars with four dashes; a prefix is any 8-35 char slice of

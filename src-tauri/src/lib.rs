@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod cli_args;
 pub mod commands;
 pub mod models;
 pub mod providers;
@@ -221,11 +222,12 @@ fn run_tauri() {
 fn run_server(args: &[String]) {
     use std::sync::Arc;
 
-    let port = parse_cli_flag(args, "--port")
+    let port = crate::cli_args::extract_flag_value(args, "--port")
         .and_then(|v| v.parse::<u16>().ok())
         .unwrap_or(3727);
-    let host = parse_cli_flag(args, "--host").unwrap_or_else(|| "0.0.0.0".to_string());
-    let dist_dir = parse_cli_flag(args, "--dist");
+    let host = crate::cli_args::extract_flag_value(args, "--host")
+        .unwrap_or_else(|| "0.0.0.0".to_string());
+    let dist_dir = crate::cli_args::extract_flag_value(args, "--dist");
 
     // Auth token: --token <value> | --no-auth | auto-generated uuid v4
     let auth_token_info = resolve_auth_token(args);
@@ -316,7 +318,7 @@ fn resolve_auth_token(args: &[String]) -> Option<(String, AuthTokenSource)> {
     if args.iter().any(|a| a == "--no-auth") {
         return None;
     }
-    if let Some(token) = parse_cli_flag(args, "--token") {
+    if let Some(token) = crate::cli_args::extract_flag_value(args, "--token") {
         let trimmed = token.trim();
         if !trimmed.is_empty() {
             return Some((trimmed.to_string(), AuthTokenSource::Cli));
@@ -479,23 +481,4 @@ fn collect_watch_paths() -> Vec<std::path::PathBuf> {
         .into_iter()
         .filter(|p| seen.insert(p.clone()))
         .collect::<Vec<_>>()
-}
-
-/// Parse a CLI flag value: `--flag value` or `--flag=value`.
-#[cfg(feature = "webui-server")]
-fn parse_cli_flag(args: &[String], flag: &str) -> Option<String> {
-    for (i, arg) in args.iter().enumerate() {
-        // --flag=value
-        if let Some(val) = arg.strip_prefix(&format!("{flag}=")) {
-            return Some(val.to_string());
-        }
-        // --flag value
-        if arg == flag {
-            match args.get(i + 1) {
-                Some(v) if !v.starts_with("--") => return Some(v.clone()),
-                _ => return None,
-            }
-        }
-    }
-    None
 }

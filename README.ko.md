@@ -325,6 +325,23 @@ GET /health
 4. 세션 클릭하여 메시지 확인
 5. 탭으로 메시지, 분석, 토큰 통계, 최근 편집, 세션 보드 전환
 
+### 커맨드라인 플래그
+
+`--session` 플래그를 사용하여 특정 세션이 미리 선택된 상태로 앱을 실행할 수 있습니다.
+
+```bash
+# 전체 UUID
+claude-code-history-viewer --session 1265cd74-caa9-472e-b343-c4f44b5cf12c
+
+# UUID 접두어 (8자 이상 hex) — 처음 매칭되는 세션 선택
+claude-code-history-viewer --session 1265cd74
+
+# equals 형식도 지원
+claude-code-history-viewer --session=1265cd74
+```
+
+앱이 모든 프로젝트를 스캔하여 매칭되는 세션으로 이동하며, 일치하는 세션이 없으면 일반 실행으로 진행됩니다. 잘못된 값(hex 아님, 길이 오류)은 조용히 무시됩니다.
+
 ## 접근성
 
 키보드 전용, 저시력, 스크린 리더 사용자를 위한 접근성 기능을 제공합니다.
