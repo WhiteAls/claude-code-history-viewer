@@ -364,8 +364,35 @@ describe("preloadSessionFromCli", () => {
     expect(deps.selectSession).toHaveBeenCalledWith(renamedSession);
   });
 
+  // Race simulation: user clicks a session while selectProject is awaiting.
+  // Exercises the post-selectProject guard inside commitSingleMatch.
+  it("skips selectSession when selectedSession mutates during selectProject await", async () => {
+    vi.mocked(api).mockResolvedValueOnce([session] as unknown as never);
+    const selectProject = vi.fn().mockImplementation(async () => {
+      mockStoreState.selectedSession = session;
+    });
+    const selectSession = vi.fn().mockResolvedValue(undefined);
+
+    const deps = makeDeps({
+      getStartupSessionHint: vi.fn().mockResolvedValue({
+        kind: "uuid",
+        value: UUID,
+      } as SessionHint),
+      projects: [project],
+      selectProject,
+      selectSession,
+    });
+
+    const result = await preloadSessionFromCli(deps);
+
+    expect(result).toEqual({ handled: true, matched: false });
+    expect(selectProject).toHaveBeenCalledWith(project);
+    expect(selectSession).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   // Real race simulation: user clicks a session mid-scan. Exercises the
-  // per-loop guard inside findSessionAcrossProjects, not just the final guard.
+  // per-loop guard inside scan helpers, not just the final guard.
   it("aborts scan loop when selectedSession mutates mid-scan", async () => {
     const projectA: ClaudeProject = { ...project, name: "a", path: "/a" };
     const projectB: ClaudeProject = { ...project, name: "b", path: "/b" };

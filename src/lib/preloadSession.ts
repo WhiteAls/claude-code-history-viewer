@@ -345,6 +345,12 @@ async function commitSingleMatch(
     return { handled: true, matched: false };
   }
   await deps.selectProject(match.project);
+  // Re-check after the project-load await: the user may have clicked a
+  // session while selectProject was loading. Skipping this check lets the
+  // CLI hint clobber their manual choice.
+  if (useAppStore.getState().selectedSession) {
+    return { handled: true, matched: false };
+  }
   await deps.selectSession(match.session);
   return { handled: true, matched: true };
 }
