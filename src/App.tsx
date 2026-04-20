@@ -122,9 +122,10 @@ function App() {
     );
   }, [activeProviders, t]);
 
-  // One-shot guard so `--session <uuid>` preload fires exactly once per
-  // process, even if project loading renders multiple times.
+  // One-shot guard so `--session` preload fires exactly once per process,
+  // even if project loading renders multiple times.
   const cliPreloadAttempted = useRef(false);
+  const openSessionPicker = useAppStore((s) => s.openSessionPicker);
 
   useEffect(() => {
     if (cliPreloadAttempted.current) return;
@@ -135,9 +136,10 @@ function App() {
       projects,
       selectProject,
       selectSession,
+      openSessionPicker,
       t: (key, fallback) => t(key, fallback ?? key),
     });
-  }, [isLoadingProjects, projects, selectProject, selectSession, t]);
+  }, [isLoadingProjects, projects, selectProject, selectSession, openSessionPicker, t]);
 
   // Local state
   const [isViewingGlobalStats, setIsViewingGlobalStats] = useState(false);

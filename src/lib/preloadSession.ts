@@ -1,15 +1,20 @@
 /**
  * CLI-driven session preload.
  *
- * When the desktop app is launched with `--session <uuid>`, the Rust side
+ * When the desktop app is launched with `--session <uuid|path>`,
+ * `--session-folder <name>`, or `--session-title <text>`, the Rust side
  * stashes a {@link SessionHint} that the frontend retrieves via the
  * `get_startup_session_hint` command. This module resolves that hint against
  * the loaded project list and calls the existing `selectProject` /
  * `selectSession` actions — the same flow the GlobalSearch modal uses for
  * cross-project navigation.
  *
- * Commit A handles `kind: "uuid"` only. Commit B will extend this to path,
- * name, and sesslog folder hints.
+ * Stage B resolvers:
+ * - `uuid`   — UUID / UUID-prefix match, first hit wins (same as Stage A).
+ * - `path`   — Absolute path to a `.jsonl` file; match by `file_path`.
+ * - `folder` — Exact project folder name match. Then pick the most recent session.
+ * - `title`  — Case-insensitive substring match against session titles / first
+ *              message previews. Multi-match opens the session picker modal.
  */
 
 import { toast } from "sonner";
@@ -17,13 +22,21 @@ import { api } from "@/services/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { ClaudeProject, ClaudeSession } from "@/types";
 
+export type SessionHintKind = "uuid" | "path" | "folder" | "title";
+
 export interface SessionHint {
-  kind: "uuid";
+  kind: SessionHintKind;
   value: string;
 }
 
 /** Translator function compatible with `i18next`'s `t()`. */
 export type Translator = (key: string, fallback?: string) => string;
+
+/** Passed to `openSessionPicker` when a title hint matches multiple sessions. */
+export interface SessionPickerCandidate {
+  project: ClaudeProject;
+  session: ClaudeSession;
+}
 
 export interface PreloadDependencies {
   /** Retrieves the startup hint, if any. Injected for testability. */
@@ -34,6 +47,8 @@ export interface PreloadDependencies {
   selectProject: (project: ClaudeProject) => Promise<void>;
   /** Select a session (mirrors store action). */
   selectSession: (session: ClaudeSession) => Promise<void>;
+  /** Open the session picker modal for ambiguous title matches. */
+  openSessionPicker: (candidates: SessionPickerCandidate[], hintValue: string) => void;
   /** i18n translator for the not-found toast. */
   t: Translator;
 }
@@ -52,11 +67,11 @@ export async function fetchStartupSessionHint(): Promise<SessionHint | null> {
   }
 }
 
-/**
- * Find a session matching a UUID or UUID-prefix across the given project's
- * loaded sessions.
- */
-function matchSession(
+// ============================================================================
+// UUID matcher (Stage A)
+// ============================================================================
+
+function matchByUuid(
   sessions: ClaudeSession[],
   uuidOrPrefix: string,
 ): ClaudeSession | undefined {
@@ -68,39 +83,110 @@ function matchSession(
   });
 }
 
+// ============================================================================
+// Path matcher (Stage B)
+// ============================================================================
+
 /**
- * Resolve a UUID hint by scanning every known project's session list.
- *
- * Each non-claude provider gets its own `load_provider_sessions` call; the
- * default claude provider uses `load_project_sessions`. Mirrors the scan in
- * `GlobalSearchModal.handleSelectResult`.
+ * Normalize a path for cross-platform comparison: collapse `\\` → `/`, lowercase
+ * on Windows (filesystem is case-insensitive), and strip a trailing slash.
  */
-async function findSessionAcrossProjects(
-  uuid: string,
-  projects: ClaudeProject[],
-): Promise<{ project: ClaudeProject; session: ClaudeSession } | null> {
-  // Hoisted: excludeSidechain doesn't change during the scan, so read once.
-  // Mirror of the same pattern in GlobalSearchModal.tsx.
+function normalizePath(path: string): string {
+  const unified = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  // Detect Windows drive-letter prefix as a proxy for OS; we don't have
+  // process.platform reliably in the renderer, so the heuristic is safe.
+  if (/^[a-zA-Z]:\//.test(unified)) {
+    return unified.toLowerCase();
+  }
+  return unified;
+}
+
+function matchByPath(sessions: ClaudeSession[], absPath: string): ClaudeSession | undefined {
+  const target = normalizePath(absPath);
+  return sessions.find((s) => normalizePath(s.file_path ?? "") === target);
+}
+
+// ============================================================================
+// Title matcher (Stage B)
+// ============================================================================
+
+/**
+ * Build a searchable string for a session: its effective display name (user's
+ * custom rename if any, else summary/first-message preview) plus the owning
+ * project name. Lowercased for case-insensitive substring matching.
+ */
+function titleHaystack(s: ClaudeSession): string {
+  const display = useAppStore.getState().getSessionDisplayName(s.actual_session_id, s.summary)
+    ?? s.summary
+    ?? "";
+  return `${display} ${s.project_name ?? ""}`.toLowerCase();
+}
+
+function matchByTitle(sessions: ClaudeSession[], substring: string): ClaudeSession[] {
+  const needle = substring.toLowerCase();
+  return sessions.filter((s) => titleHaystack(s).includes(needle));
+}
+
+// ============================================================================
+// Project scan helpers
+// ============================================================================
+
+type ProjectSessionsPair = { project: ClaudeProject; sessions: ClaudeSession[] };
+
+async function loadSessionsFor(
+  project: ClaudeProject,
+  excludeSidechain: boolean,
+): Promise<ClaudeSession[]> {
+  const providerId = project.provider ?? "claude";
+  return api<ClaudeSession[]>(
+    providerId !== "claude" ? "load_provider_sessions" : "load_project_sessions",
+    providerId !== "claude"
+      ? { provider: providerId, projectPath: project.path, excludeSidechain }
+      : { projectPath: project.path, excludeSidechain },
+  );
+}
+
+/**
+ * Scan every known project and return sessions paired with their owning
+ * project. Tolerates per-project failures (logs warn, keeps going). Aborts
+ * early if the race guard trips (user manually picked a session).
+ *
+ * Returns `null` when the race guard fires so callers can distinguish "user
+ * picked something" from "no matches."
+ */
+async function scanAllProjects(projects: ClaudeProject[]): Promise<ProjectSessionsPair[] | null> {
   const { excludeSidechain } = useAppStore.getState();
+  const out: ProjectSessionsPair[] = [];
 
   for (const project of projects) {
-    // Race guard: if the user has manually picked a session while we were
-    // scanning, abort the scan so the CLI hint doesn't clobber their choice.
     if (useAppStore.getState().selectedSession) {
       return null;
     }
     try {
-      const providerId = project.provider ?? "claude";
-      const projectSessions = await api<ClaudeSession[]>(
-        providerId !== "claude" ? "load_provider_sessions" : "load_project_sessions",
-        providerId !== "claude"
-          ? { provider: providerId, projectPath: project.path, excludeSidechain }
-          : { projectPath: project.path, excludeSidechain },
-      );
-      const session = matchSession(projectSessions, uuid);
-      if (session) {
-        return { project, session };
-      }
+      const sessions = await loadSessionsFor(project, excludeSidechain);
+      out.push({ project, sessions });
+    } catch (error) {
+      console.warn(`preloadSession: failed to scan project ${project.name}:`, error);
+    }
+  }
+  return out;
+}
+
+// ============================================================================
+// Per-kind resolvers
+// ============================================================================
+
+async function resolveUuid(
+  uuid: string,
+  projects: ClaudeProject[],
+): Promise<SessionPickerCandidate | null> {
+  const { excludeSidechain } = useAppStore.getState();
+  for (const project of projects) {
+    if (useAppStore.getState().selectedSession) return null;
+    try {
+      const sessions = await loadSessionsFor(project, excludeSidechain);
+      const session = matchByUuid(sessions, uuid);
+      if (session) return { project, session };
     } catch (error) {
       console.warn(`preloadSession: failed to scan project ${project.name}:`, error);
     }
@@ -108,12 +194,84 @@ async function findSessionAcrossProjects(
   return null;
 }
 
+async function resolvePath(
+  absPath: string,
+  projects: ClaudeProject[],
+): Promise<SessionPickerCandidate | null> {
+  const { excludeSidechain } = useAppStore.getState();
+  for (const project of projects) {
+    if (useAppStore.getState().selectedSession) return null;
+    try {
+      const sessions = await loadSessionsFor(project, excludeSidechain);
+      const session = matchByPath(sessions, absPath);
+      if (session) return { project, session };
+    } catch (error) {
+      console.warn(`preloadSession: failed to scan project ${project.name}:`, error);
+    }
+  }
+  return null;
+}
+
+async function resolveFolder(
+  folderName: string,
+  projects: ClaudeProject[],
+): Promise<SessionPickerCandidate | null> {
+  // Folder name matches the project directory name, not the full path.
+  const lower = folderName.toLowerCase();
+  const target = projects.find((p) => {
+    // `path` is the sesslog project directory: /Users/.../.claude/projects/<folder>
+    const parts = p.path.split(/[\\/]/);
+    const name = parts[parts.length - 1] ?? "";
+    return name.toLowerCase() === lower;
+  });
+  if (!target) return null;
+
+  if (useAppStore.getState().selectedSession) return null;
+
+  try {
+    const { excludeSidechain } = useAppStore.getState();
+    const sessions = await loadSessionsFor(target, excludeSidechain);
+    // Pick the most recently modified session as the "default" for a folder hint.
+    const sorted = [...sessions].sort((a, b) => {
+      const at = a.last_modified ?? "";
+      const bt = b.last_modified ?? "";
+      return bt.localeCompare(at);
+    });
+    const session = sorted[0];
+    if (session) return { project: target, session };
+  } catch (error) {
+    console.warn(`preloadSession: failed to load folder ${folderName}:`, error);
+  }
+  return null;
+}
+
 /**
- * Main entry point. Called once after projects are loaded. If no hint is
- * present, returns a benign `{ handled: false }`. If a hint is present but
- * no session matches, shows a toast and returns `{ handled: true,
- * matched: false }`.
+ * Resolve a title hint by scanning every project and collecting all substring
+ * matches. Returns the list so the caller can decide: zero → toast, one →
+ * auto-select, multi → open picker modal.
+ *
+ * Returns `null` when the race guard tripped mid-scan.
  */
+async function resolveTitle(
+  substring: string,
+  projects: ClaudeProject[],
+): Promise<SessionPickerCandidate[] | null> {
+  const scanned = await scanAllProjects(projects);
+  if (scanned === null) return null;
+
+  const candidates: SessionPickerCandidate[] = [];
+  for (const { project, sessions } of scanned) {
+    for (const session of matchByTitle(sessions, substring)) {
+      candidates.push({ project, session });
+    }
+  }
+  return candidates;
+}
+
+// ============================================================================
+// Main entry point
+// ============================================================================
+
 export async function preloadSessionFromCli(
   deps: PreloadDependencies,
 ): Promise<{ handled: boolean; matched: boolean }> {
@@ -121,25 +279,60 @@ export async function preloadSessionFromCli(
   if (!hint) {
     return { handled: false, matched: false };
   }
-  if (hint.kind !== "uuid") {
-    // Commit A: unrecognized kinds are ignored rather than crashing.
-    console.warn(`preloadSession: unsupported hint kind "${hint.kind}"`);
+
+  // Dispatch per kind.
+  if (hint.kind === "uuid") {
+    return commitSingleMatch(await resolveUuid(hint.value, deps.projects), deps);
+  }
+  if (hint.kind === "path") {
+    return commitSingleMatch(await resolvePath(hint.value, deps.projects), deps);
+  }
+  if (hint.kind === "folder") {
+    return commitSingleMatch(await resolveFolder(hint.value, deps.projects), deps);
+  }
+  if (hint.kind === "title") {
+    const matches = await resolveTitle(hint.value, deps.projects);
+    if (matches === null) {
+      // Race guard tripped during scan — user chose something else.
+      return { handled: true, matched: false };
+    }
+    if (matches.length === 0) {
+      if (useAppStore.getState().selectedSession) {
+        return { handled: true, matched: false };
+      }
+      toast.error(deps.t("globalSearch.sessionNotFound", "Session not found"));
+      return { handled: true, matched: false };
+    }
+    if (matches.length === 1) {
+      return commitSingleMatch(matches[0] ?? null, deps);
+    }
+    // Multi-match: delegate to the picker modal.
+    if (useAppStore.getState().selectedSession) {
+      return { handled: true, matched: false };
+    }
+    deps.openSessionPicker(matches, hint.value);
     return { handled: true, matched: false };
   }
 
-  const match = await findSessionAcrossProjects(hint.value, deps.projects);
+  console.warn(`preloadSession: unsupported hint kind "${(hint as SessionHint).kind}"`);
+  return { handled: true, matched: false };
+}
+
+/**
+ * Apply a resolved single match to the store — with the same guard flow as
+ * Stage A: if the race guard fires, suppress both toast and selection.
+ */
+async function commitSingleMatch(
+  match: SessionPickerCandidate | null,
+  deps: PreloadDependencies,
+): Promise<{ handled: boolean; matched: boolean }> {
   if (!match) {
-    // Check the race guard explicitly: the scan returns null either because
-    // no session matched or because the user already selected one mid-scan.
-    // Only show the "not found" toast in the former case.
     if (useAppStore.getState().selectedSession) {
       return { handled: true, matched: false };
     }
     toast.error(deps.t("globalSearch.sessionNotFound", "Session not found"));
     return { handled: true, matched: false };
   }
-
-  // Final race guard before committing the hint-driven selection.
   if (useAppStore.getState().selectedSession) {
     return { handled: true, matched: false };
   }

@@ -191,6 +191,10 @@ export interface AppStoreState {
 
   // Archive state
   archive: import('../slices/archiveSlice').ArchiveSliceState['archive'];
+
+  // Session picker state (used by CLI `--session-title` hint with multi-match)
+  sessionPickerCandidates: import('./sessionPickerSlice').SessionPickerCandidate[] | null;
+  sessionPickerHintValue: string | null;
 }
 
 export interface AppStoreActions {
@@ -367,6 +371,13 @@ export interface AppStoreActions {
   setArchiveActiveTab: (tab: import('../../types').ArchiveViewTab) => void;
   clearArchiveError: () => void;
   resetArchive: () => void;
+
+  // Session picker actions
+  openSessionPicker: (
+    candidates: import('./sessionPickerSlice').SessionPickerCandidate[],
+    hintValue: string,
+  ) => void;
+  closeSessionPicker: () => void;
 }
 
 export type FullAppStore = AppStoreState & AppStoreActions;
