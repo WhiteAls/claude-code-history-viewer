@@ -341,12 +341,14 @@ describe("preloadSessionFromCli", () => {
 
   it("title kind respects the user's custom session name from metadata", async () => {
     // User renamed session to "My payment bug report"; summary is unrelated.
+    // The metadata store keys custom names by `session_id` (the app-wide
+    // identifier); stub + production must agree on that key.
     const renamedSession: ClaudeSession = {
       ...session,
       summary: "Initial checkout investigation",
     };
     mockStoreState.getSessionDisplayName = (id, fallback) =>
-      id === renamedSession.actual_session_id ? "My payment bug report" : fallback;
+      id === renamedSession.session_id ? "My payment bug report" : fallback;
     vi.mocked(api).mockResolvedValueOnce([renamedSession] as unknown as never);
     const deps = makeDeps({
       getStartupSessionHint: vi.fn().mockResolvedValue({
