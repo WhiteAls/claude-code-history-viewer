@@ -166,10 +166,11 @@ export const GlobalSearchModal = ({
                     return;
                 }
 
+                // Hoisted: excludeSidechain doesn't change during the scan, so read once.
+                const { excludeSidechain } = useAppStore.getState();
                 for (const project of projects) {
                     try {
                         const projectProvider = project.provider ?? "claude";
-                        const { excludeSidechain } = useAppStore.getState();
                         const projectSessions = await api<ClaudeSession[]>(
                             projectProvider !== "claude" ? "load_provider_sessions" : "load_project_sessions",
                             projectProvider !== "claude"

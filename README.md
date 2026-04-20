@@ -328,6 +328,23 @@ GET /health
 4. Click a session to view messages
 5. Use tabs to switch between Messages, Analytics, Token Stats, Recent Edits, and Session Board
 
+### Command-line flags
+
+Launch the app pre-focused on a specific session by passing a `--session` flag:
+
+```bash
+# Full UUID
+claude-code-history-viewer --session 1265cd74-caa9-472e-b343-c4f44b5cf12c
+
+# UUID prefix (8+ hex chars) — first match wins
+claude-code-history-viewer --session 1265cd74
+
+# Equals form also works
+claude-code-history-viewer --session=1265cd74
+```
+
+The viewer scans every known project, navigates to the matching session, and falls back to normal startup if no session matches. Malformed values (non-hex, wrong length) are silently ignored.
+
 ## Accessibility
 
 The app includes accessibility features for keyboard-only, low-vision, and screen-reader users.
