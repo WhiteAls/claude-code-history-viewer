@@ -98,6 +98,9 @@ jobs:
           cache-on-failure: true
 
 
+      - name: Create dist placeholder for rust-embed
+        run: mkdir -p dist && touch dist/index.html
+
       - name: Run tests with nextest
         working-directory: src-tauri
         run: cargo nextest run --profile ci --retries 2
