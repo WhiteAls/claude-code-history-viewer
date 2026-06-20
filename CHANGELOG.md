@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-06-21
+
+### Added
+- **Three new read-only providers**: **Cursor Agent** (`~/.cursor/projects/.../agent-transcripts`, distinct from the Cursor IDE source) (#304, #397), **Kimi CLI** (`~/.kimi` sessions, `kimi -r` resume) (#349), and **Kiro CLI** (SQLite-backed `kiro-cli/data.sqlite3`) (#324).
+- **Codex native rename & delete**: rename writes `threads.title` in `state_5.sqlite` (the resume-picker-visible name) while the rollout transcript stays immutable; honors `CODEX_HOME` for both `sessions` and `archived_sessions`; a new in-app delete confirmation dialog replaces the OS-native prompt. (#373)
+
+### Changed
+- Codex project-list scans now mmap + memchr-scan only the `session_meta` line instead of fully parsing every rollout, and each provider scans independently so a slow provider no longer blocks fast ones from appearing. (#370)
+- In-session search indexing moved to a Web Worker (FlexSearch) so indexing a large session no longer blocks the UI. (#352)
+- Claude project name and the `claude --resume` working directory are now resolved from session JSONL metadata instead of the lossy storage-dir encoding. `CACHE_VERSION` bumped to 10 (one-time transparent re-scan on first launch). (#369)
+
+### Fixed
+- Removed blank gaps in the virtualized message history and stopped the first rows rendering under the sticky header, while preserving the subagent-crash (#334) and sidechain (#389) handling. (#371)
+- Kimi watcher auto-refresh on macOS: canonicalize the event path before base-path matching (`/var` → `/private/var` symlink). (#407)
+- Cursor scan no longer panics on multibyte/percent workspace-folder names. (#398)
+- Claude native rename uses the correct event format and preserves the first user prompt on title reset. (#368)
+- Improved long project-path labels in the project tree. (#354)
+
+### Internal
+- Added a frontend CI gate (tsc / eslint / vitest / i18n) on pull requests. (#406)
+
+## [1.14.1] - 2026-06-20
+
+### Fixed
+- Global search now matches tool-result content, not just message text. (#394)
+- Recognize the `/branch` custom title as a session-rename source. (#395)
+- Detect and parse Gemini CLI `.jsonl` sessions. (#348)
+- Show the conversation when navigating from a global-search hit. (#390)
+- Project-list scrollbar now reaches the bottom (`min-h-0`). (#101)
+
+## [1.14.0] - 2026-06-17
+
+### Added
+- **CodeBuddy Code provider** — browse CodeBuddy conversation history alongside the other assistants. (#353)
+- **WebUI account login** for `--serve` mode: optional Argon2id account auth + server-side sessions + CSRF, a read-only mode, and base-path support for reverse-proxy hosting. (#384)
+- Render advisor tool results instead of the unknown-type fallback. (#380, #386)
+
+### Changed
+- Role and content-type message filters now persist across session switches and app restarts. (#363)
+
+### Fixed
+- Estimate full height for subagent rows to prevent the React #185 crash when opening large subagent sessions. (#334)
+- Map subagent clicks via `meta.json` `toolUseId` for multi-subagent sessions. (#288)
+- Include custom Claude directories in the global stats summary. (#362)
+- Accept sessions under a symlinked `~/.claude` allowlist root. (#355)
+- Configure ibus/fcitx IME env on Linux startup so CJK input works in the search box. (#360)
+- Stop a WebUI watcher refresh loop. (#367)
+- WSL chat history no longer ignored in project list / global search for Claude-only users. (#347)
+- Use the OverlayScrollbars `initialized` event instead of polling. (#351)
+
 ## [1.13.0] - 2026-05-25
 
 ### Added

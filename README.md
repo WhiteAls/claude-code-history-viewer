@@ -117,7 +117,17 @@ Antigravity note: the viewer resolves the Antigravity root as `~/.gemini/antigra
 |---------|-------|
 | **Antigravity** | Loaded through the standard provider pipeline. Sessions come from the token monitor cache and participate in project/session views, token stats, analytics, and global search without a separate UI mode. |
 
-### New in v1.14.0
+### New in v1.15.0
+
+| Feature | Description |
+|---------|-------------|
+| **Three New Providers** | Browse history from **Cursor Agent** (agent-transcripts, distinct from the Cursor IDE source), **Kimi** (`~/.kimi`, with `kimi -r` resume), and **Kiro** (SQLite-backed `kiro-cli`) |
+| **Codex Native Rename & Delete** | Rename Codex sessions — the title is written to `state_5.sqlite` and shows in the `codex` resume picker, while the rollout transcript stays immutable — and delete sessions through a new in-app confirmation dialog; honors `CODEX_HOME` (sessions + archived) |
+| **Faster Scans & Search** | Codex project lists scan only the session-meta line (mmap + memchr) and each provider scans independently, so a slow provider no longer blocks fast ones; in-session search indexing moved to a Web Worker so large sessions no longer freeze the UI |
+| **Accurate Claude Project Paths** | Project name and the `claude --resume` working directory are now resolved from session metadata instead of the lossy folder encoding (one-time transparent re-scan on first launch) |
+| **Fixes** | Removed blank gaps in the virtualized message history; fixed Kimi auto-refresh on macOS; fixed a Cursor scan crash on multibyte workspace-folder names |
+
+### v1.14.0
 
 | Feature | Description |
 |---------|-------------|
@@ -137,17 +147,7 @@ Antigravity note: the viewer resolves the Antigravity root as `~/.gemini/antigra
 | **Pricing Accuracy** | Fixed `claude-opus-4-7` 3× overcharge; added `gpt-5.4` / `gpt-5.5` pricing with Codex cached-token handling |
 | **macOS Updater Reliability** | Native OS-level relaunch fallback for the Tauri v2 macOS relaunch bug — no more "please quit and reopen" |
 
-### v1.12.0
-
-| Feature | Description |
-|---------|-------------|
-| **Two New Providers** | Added **Antigravity** and **ForgeCode** — now supports 9 AI coding assistants |
-| **External Session Launch** | New `--session <uuid>` CLI flag with single-instance enforcement and macOS Apple Events for re-invocation |
-| **Sub-agent Filter** | Toggle sub-agent messages on/off from the header dropdown |
-| **Context Menu Polish** | Right-click menus rendered in portal for cursor-precise anchoring; clamp to panel bounds; close on scroll |
-| **Custom Directory** | Custom Claude directory selection now applies instantly without restart |
-
-> Older releases: see [CHANGELOG.md](./CHANGELOG.md) for v1.11.0 and earlier.
+> Older releases: see [CHANGELOG.md](./CHANGELOG.md) for v1.12.0 and earlier.
 
 ### More
 
