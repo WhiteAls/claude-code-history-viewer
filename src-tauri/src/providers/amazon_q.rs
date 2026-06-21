@@ -10,7 +10,7 @@
 
 use crate::models::{ClaudeMessage, ClaudeProject, ClaudeSession};
 use crate::providers::{q_conversation, ProviderInfo};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::{Path, PathBuf};
 
 const PROVIDER: &str = "amazonq";
@@ -130,13 +130,16 @@ pub fn load_sessions(
     let key = project_path.strip_prefix(SCHEME).unwrap_or(project_path);
     let conn = open_db()?;
 
+    // .optional(): "no row" -> Ok(None) (stale project path -> empty), but a real
+    // DB error propagates instead of being silently swallowed as an empty list.
     let value: Option<String> = conn
         .query_row(
             "SELECT value FROM conversations WHERE key = ?1",
             [key],
             |r| r.get(0),
         )
-        .ok();
+        .optional()
+        .map_err(|e| format!("Failed to load Amazon Q conversation: {e}"))?;
     let Some(value) = value else {
         return Ok(vec![]);
     };
