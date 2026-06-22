@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] - 2026-06-22
+
+### Added
+- **Eleven new read-only providers**, expanding coverage from 14 to ~25 AI coding assistants:
+  - **Continue.dev** (`~/.continue/sessions/*.json`, grouped by `workspaceDirectory`; honors `CONTINUE_GLOBAL_DIR`) and its fork **PearAI** (`~/.pearai/sessions`), sharing a parameterized Continue-family core. (#416)
+  - **Kilo Code** — folded into the Cline-family reader (`kilocode.kilo-code` globalStorage; per-task files byte-identical to Cline/Roo). (#416)
+  - **Goose** (`<data-dir>/goose/sessions/sessions.db`, SQLite), **Crush** (per-project `./.crush/crush.db`, discovered by scanning common code roots), and **llm** (Simon Willison's `io.datasette.llm/logs.db`, with token counts). (#416)
+  - **Amazon Q Developer CLI** (`amazon-q/data.sqlite3` `conversations`), sharing `ConversationState` parsing with the Kiro CLI provider. (#417)
+  - **Open Interpreter** (`~/.openinterpreter/sessions/**` — Codex-format rollouts, reusing the Codex parser; `INTERPRETER_HOME` override). (#418)
+  - **Qwen Code** (`~/.qwen/projects/<cwd>/chats/*.jsonl`). (#418)
+  - **Zed** (Agent Panel threads in `…/Zed/threads/threads.db` — SQLite + Zstd-compressed JSON). (#418)
+  - **OpenHands** (classic `~/.openhands/sessions/<id>/events/*.json`). (#418)
+  - **Trae** (per-workspace `state.vscdb` icube chat — reverse-engineered, provisional). (#418)
+
+### Fixed
+- Kiro CLI database path on Windows now resolves via `data_local_dir()` (`%LOCALAPPDATA%`) instead of the incorrect `AppData\Roaming`. (#417)
+
 ## [1.16.0] - 2026-06-21
 
 ### Added
