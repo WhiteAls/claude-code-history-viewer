@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0] - 2026-06-30
+
+Feature and fix release: search/sidebar usability improvements plus a significant startup-performance fix.
+
+### Added
+- **Global search results now show which conversation each match belongs to**, so you can tell apart matches that share the same text across sessions. (#426)
+- **Collapsible provider-filter panel in the sidebar**, reclaiming vertical space for the session list on narrow sidebars; the collapsed header still surfaces the active filter summary and count. (#431)
+
+### Changed
+- **Project identity prefers the verifiable on-disk folder name over a stale `cwd`** embedded in old transcripts, so projects that moved or were recorded by a subagent group correctly. Existing projects may show a corrected display name after the first scan. (#419)
+
+### Performance
+- **Startup no longer stalls for tens of seconds.** Provider scanners now run concurrently instead of sequentially, so a locked SQLite database (from a tool running alongside the viewer) no longer stacks its timeout against the others — the worst case drops from a sum of timeouts to a single overlapped wait. (#436, #434)
+
+### Fixed
+- **Exporting a subagent session now includes its messages** instead of producing an empty file. The sidechain filter is only applied to parent-session exports now. (#435, #433)
+- **OpenCode global sessions are split by directory** into separate virtual projects, and sessions with an empty `directory` value now load correctly (scan and load hash the same raw value). (#432)
+- **OpenCode session cache is bounded** (LRU, 10k entries) to prevent unbounded memory growth from the file watcher. (#428)
+- **Cline-family truncation is char-safe** and Roo/Kilo summary labels render correctly. (#425)
+
 ## [1.17.1] - 2026-06-23
 
 Patch release fixing conversation loading for several assistants added in 1.17.0.
