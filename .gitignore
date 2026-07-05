@@ -9,6 +9,7 @@ lerna-debug.log*
 
 # Dependencies
 node_modules
+.pnpm-store
 .pnp
 .pnp.js
 package-lock.json
@@ -17,6 +18,9 @@ package-lock.json
 dist
 dist-ssr
 *.local
+
+# Playwright MCP / ad-hoc browser-debug artifacts
+.playwright-mcp/
 
 # Tauri
 src-tauri/target/
