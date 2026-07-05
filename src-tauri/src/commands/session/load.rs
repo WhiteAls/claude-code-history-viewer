@@ -790,6 +790,46 @@ fn is_genuine_user_text(text: &str) -> bool {
     true
 }
 
+/// Normalize `queue-operation` entries on a line-ordered message slice.
+///
+/// Queue entries carry no `uuid`/`parentUuid`, so the frontend tree builder would
+/// treat them as roots and float them out of place. Two fixes, in one sequential
+/// pass so we have access to the preceding message:
+///   1. Thread each queue entry onto the previous message (inline placement).
+///   2. Promote a genuinely typed queued prompt (`enqueue` + plain user text) to a
+///      real `user` message so it is always shown. Automated enqueues
+///      (e.g. `<task-notification>`) and bookkeeping ops (remove/dequeue/popAll)
+///      stay `queue-operation`, gated by the frontend "show system messages" toggle.
+///
+/// Only entries that were originally `queue-operation` are touched, so genuine
+/// conversation roots (e.g. the first user message, post-compact roots) are safe.
+fn normalize_queue_entries(messages: &mut [ClaudeMessage]) {
+    for i in 0..messages.len() {
+        if messages[i].message_type != "queue-operation" {
+            continue;
+        }
+
+        let prev_uuid = i.checked_sub(1).map(|p| messages[p].uuid.clone());
+        let entry = &mut messages[i];
+
+        if entry.parent_uuid.is_none() {
+            entry.parent_uuid = prev_uuid;
+        }
+
+        let is_user_prompt = entry.operation.as_deref() == Some("enqueue")
+            && entry
+                .content
+                .as_ref()
+                .and_then(|c| c.as_str())
+                .is_some_and(is_genuine_user_text);
+        if is_user_prompt {
+            entry.message_type = "user".to_string();
+            entry.role = Some("user".to_string());
+            entry.operation = None;
+        }
+    }
+}
+
 fn truncate_text(text: &str, max_chars: usize) -> String {
     if text.chars().count() > max_chars {
         let truncated: String = text.chars().take(max_chars).collect();
@@ -1451,6 +1491,10 @@ pub async fn load_session_messages(session_path: String) -> Result<Vec<ClaudeMes
 
             parse_line_simd(line_num, &mut line_bytes, false)
                 .filter(|msg| {
+                    // Keep queue-operation; normalize_queue_entries promotes/threads it.
+                    if msg.message_type == "queue-operation" {
+                        return true;
+                    }
                     if is_system_message_type(&msg.message_type) {
                         return false;
                     }
@@ -1465,7 +1509,8 @@ pub async fn load_session_messages(session_path: String) -> Result<Vec<ClaudeMes
 
     // Sort by line number to maintain original order
     messages.sort_by_key(|(line_num, _)| *line_num);
-    let messages: Vec<ClaudeMessage> = messages.into_iter().map(|(_, msg)| msg).collect();
+    let mut messages: Vec<ClaudeMessage> = messages.into_iter().map(|(_, msg)| msg).collect();
+    normalize_queue_entries(&mut messages);
 
     #[cfg(debug_assertions)]
     {
@@ -1664,6 +1709,12 @@ fn classify_line_fast(line: &[u8], exclude_sidechain: bool) -> bool {
         if classifier.message_type == "summary" {
             return false;
         }
+        // Queue entries are loaded (not treated as excluded noise): genuine queued
+        // prompts become user messages and service ops are gated by the frontend
+        // "show system messages" toggle. See `normalize_queue_entries`.
+        if classifier.message_type == "queue-operation" {
+            return true;
+        }
         if is_system_message_type(&classifier.message_type) {
             return false;
         }
@@ -1758,7 +1809,8 @@ pub async fn load_session_messages_paginated(
 
     // Sort by line number to maintain original order
     parsed.sort_by_key(|(line_num, _)| *line_num);
-    let messages: Vec<ClaudeMessage> = parsed.into_iter().map(|(_, msg)| msg).collect();
+    let mut messages: Vec<ClaudeMessage> = parsed.into_iter().map(|(_, msg)| msg).collect();
+    normalize_queue_entries(&mut messages);
 
     let has_more = start_idx > 0;
     let next_offset = offset + messages.len();
