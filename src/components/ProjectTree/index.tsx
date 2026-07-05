@@ -3,8 +3,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Folder,
   Database,
-  ChevronDown,
-  ChevronRight,
   List,
   FolderTree,
   GitBranch,
@@ -13,16 +11,13 @@ import {
   RotateCcw,
   Search,
   X,
+  SlidersHorizontal,
+  ChevronDown,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { getLocale } from "../../utils/time";
 import { ProjectContextMenu } from "../ProjectContextMenu";
 import { useProjectTreeState } from "./hooks/useProjectTreeState";
@@ -45,16 +40,6 @@ import {
 } from "../../utils/providers";
 
 type ProviderTabId = "all" | ProviderId;
-
-const PROVIDER_FILTERS_OPEN_STORAGE_KEY = "projectTree.providerFiltersOpen";
-
-const loadProviderFiltersOpenState = () => {
-  try {
-    return localStorage.getItem(PROVIDER_FILTERS_OPEN_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-};
 
 export const ProjectTree: React.FC<ProjectTreeProps> = ({
   projects,
@@ -104,21 +89,29 @@ export const ProjectTree: React.FC<ProjectTreeProps> = ({
   } = useProjectTreeState(groupingMode);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [areProviderFiltersOpen, setAreProviderFiltersOpen] = useState(
-    loadProviderFiltersOpenState
-  );
   const searchInputId = React.useId();
 
-  useEffect(() => {
+  // Provider filter row is collapsed by default to save sidebar space; the choice
+  // is remembered across sessions.
+  const PROVIDER_FILTER_STORAGE_KEY = "cchv:providerFilterExpanded";
+  const [showProviderFilter, setShowProviderFilter] = useState(() => {
     try {
-      localStorage.setItem(
-        PROVIDER_FILTERS_OPEN_STORAGE_KEY,
-        String(areProviderFiltersOpen)
-      );
+      return localStorage.getItem(PROVIDER_FILTER_STORAGE_KEY) === "1";
     } catch {
-      // localStorage may be unavailable; the collapsed default still works.
+      return false;
     }
-  }, [areProviderFiltersOpen]);
+  });
+  const toggleProviderFilter = useCallback(() => {
+    setShowProviderFilter((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(PROVIDER_FILTER_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        // ignore storage failures (private mode, quota, etc.)
+      }
+      return next;
+    });
+  }, []);
 
   // Wrap session select to also close mobile drawer
   const handleSessionSelect = useCallback(
@@ -195,34 +188,6 @@ export const ProjectTree: React.FC<ProjectTreeProps> = ({
   const showProviderBadge = isAllProvidersSelected
     ? selectableProviderIds.length > 1
     : selectedProviderFilters.length !== 1;
-
-  const providerFilterSummary = useMemo(() => {
-    if (isAllProvidersSelected) {
-      return t("session.board.controls.all", "ALL");
-    }
-
-    const labels = selectedProviderFilters
-      .slice(0, 2)
-      .map((providerId) =>
-        getProviderLabel((key, fallback) => t(key, fallback), providerId)
-      );
-    const remainingCount = selectedProviderFilters.length - labels.length;
-
-    return remainingCount > 0
-      ? `${labels.join(", ")} +${remainingCount}`
-      : labels.join(", ");
-  }, [isAllProvidersSelected, selectedProviderFilters, t]);
-
-  const providerFilterCount = useMemo(
-    () =>
-      isAllProvidersSelected
-        ? providerCounts.all
-        : selectedProviderFilters.reduce(
-            (count, providerId) => count + providerCounts[providerId],
-            0
-          ),
-    [isAllProvidersSelected, providerCounts, selectedProviderFilters]
-  );
 
   const matchesProviderFilter = useCallback(
     (project: (typeof projects)[number]) =>
@@ -840,102 +805,88 @@ export const ProjectTree: React.FC<ProjectTreeProps> = ({
                   </button>
                 </div>
               )}
+              {/* Provider filter collapse toggle */}
+              <button
+                onClick={toggleProviderFilter}
+                aria-expanded={showProviderFilter}
+                className={cn(
+                  "flex items-center gap-0.5 p-1 rounded transition-all duration-200",
+                  !isAllProvidersSelected
+                    ? "text-accent bg-accent/10"
+                    : "text-muted-foreground hover:text-accent hover:bg-accent/10"
+                )}
+                title={t("project.toggleProviderFilters", "Provider filters")}
+                aria-label={t("project.toggleProviderFilters", "Provider filters")}
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+                <ChevronDown
+                  className={cn(
+                    "w-3 h-3 transition-transform duration-200",
+                    showProviderFilter && "rotate-180"
+                  )}
+                />
+              </button>
               <span className="text-xs font-mono text-accent bg-accent/10 px-2 py-0.5 rounded-full">
                 {filteredProjects.length}
               </span>
             </div>
           </div>
-          <Collapsible
-            open={areProviderFiltersOpen}
-            onOpenChange={setAreProviderFiltersOpen}
-            className="mt-2"
-          >
-            <div className="flex items-center gap-1.5">
-              <CollapsibleTrigger asChild>
+          {showProviderFilter && (
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {providerTabs.map((tab) => {
+              const isActive = tab.id === "all"
+                ? isAllProvidersSelected
+                : !isAllProvidersSelected && selectedProviderFilters.includes(tab.id);
+              const isDisabled = tab.id !== "all" && !selectableProviderIds.includes(tab.id);
+
+              return (
                 <button
-                  type="button"
+                  key={tab.id}
+                  onClick={() => {
+                    void handleProviderTabClick(tab.id);
+                  }}
+                  disabled={isDisabled}
                   className={cn(
-                    "flex min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 py-1",
-                    "bg-muted/30 text-left text-2xs font-medium text-muted-foreground transition-colors",
-                    "hover:bg-accent/8 hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
+                    "inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-2xs font-medium transition-colors",
+                    isDisabled
+                      ? "bg-muted/20 text-muted-foreground/50 border-transparent cursor-not-allowed"
+                      : isActive
+                      ? "bg-accent/15 text-accent border-accent/30"
+                      : "bg-muted/30 text-muted-foreground border-transparent hover:bg-accent/8 hover:text-accent"
                   )}
-                  title={providerFilterSummary}
-                  aria-label={`${areProviderFiltersOpen
-                    ? t("common.collapse", "Collapse")
-                    : t("common.expand", "Expand")}: ${providerFilterSummary} (${providerFilterCount})`}
+                  title={tab.label}
                 >
-                  {areProviderFiltersOpen ? (
-                    <ChevronDown className="h-3 w-3 shrink-0" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3 shrink-0" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate">
-                    {providerFilterSummary}
-                  </span>
-                  <span className="rounded bg-accent/15 px-1 py-0.5 font-mono text-px10 leading-none text-accent">
-                    {providerFilterCount}
+                  <span>{tab.label}</span>
+                  <span
+                    className={cn(
+                      "px-1 py-0.5 rounded text-px10 font-mono leading-none",
+                      isActive ? "bg-accent/20 text-accent" : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {tab.count}
                   </span>
                 </button>
-              </CollapsibleTrigger>
-              <button
-                onClick={() => {
-                  void applyProviderSelection(selectableProviderIds);
-                }}
-                disabled={isAllProvidersSelected}
-                className={cn(
-                  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-muted-foreground transition-colors",
-                  isAllProvidersSelected
-                    ? "border-transparent bg-muted/20 text-muted-foreground/50 cursor-not-allowed"
-                    : "border-transparent bg-muted/30 hover:bg-accent/8 hover:text-accent"
-                )}
-                title={t("project.resetProviderFilters", "Reset")}
-                aria-label={t("project.resetProviderFilters", "Reset")}
-              >
-                <RotateCcw className="w-3 h-3" />
-              </button>
-            </div>
-            <CollapsibleContent>
-              <div className="mt-2 max-h-44 overflow-y-auto pr-1">
-                <div className="flex flex-wrap items-center gap-1">
-                  {providerTabs.map((tab) => {
-                    const isActive = tab.id === "all"
-                      ? isAllProvidersSelected
-                      : !isAllProvidersSelected && selectedProviderFilters.includes(tab.id);
-                    const isDisabled = tab.id !== "all" && !selectableProviderIds.includes(tab.id);
-
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => {
-                          void handleProviderTabClick(tab.id);
-                        }}
-                        disabled={isDisabled}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-2xs font-medium transition-colors",
-                          isDisabled
-                            ? "bg-muted/20 text-muted-foreground/50 border-transparent cursor-not-allowed"
-                            : isActive
-                            ? "bg-accent/15 text-accent border-accent/30"
-                            : "bg-muted/30 text-muted-foreground border-transparent hover:bg-accent/8 hover:text-accent"
-                        )}
-                        title={tab.label}
-                      >
-                        <span>{tab.label}</span>
-                        <span
-                          className={cn(
-                            "px-1 py-0.5 rounded text-px10 font-mono leading-none",
-                            isActive ? "bg-accent/20 text-accent" : "bg-muted text-muted-foreground"
-                          )}
-                        >
-                          {tab.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+              );
+            })}
+            <button
+              onClick={() => {
+                void applyProviderSelection(selectableProviderIds);
+              }}
+              disabled={isAllProvidersSelected}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-2xs font-medium transition-colors",
+                isAllProvidersSelected
+                  ? "bg-muted/20 text-muted-foreground/50 border-transparent cursor-not-allowed"
+                  : "bg-muted/30 text-muted-foreground border-transparent hover:bg-accent/8 hover:text-accent"
+              )}
+              title={t("project.resetProviderFilters", "Reset")}
+              aria-label={t("project.resetProviderFilters", "Reset")}
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>{t("project.resetProviderFilters", "Reset")}</span>
+            </button>
+          </div>
+          )}
         </div>
 
         {/* Search */}
