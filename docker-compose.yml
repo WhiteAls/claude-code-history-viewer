@@ -1,12 +1,30 @@
 services:
   webui:
     build: .
+    # Run as root so the read-only host mounts (owned by the host uid, often 0700)
+    # are readable. The image's `cchv` is a system user whose uid does not match
+    # the host owner; without this override restrictive ~/.claude perms break scans.
+    # Safe here because the port is published to loopback only.
+    user: "0:0"
+    environment:
+      # The server resolves history paths from HOME; mounts live under /home/cchv,
+      # so HOME must point there even though we run as uid 0.
+      HOME: /home/cchv
     ports:
-      - "127.0.0.1:3727:3727"
+      # Published to loopback only — the WebUI is never exposed off this machine.
+      - "127.0.0.1:8080:3727"
     volumes:
       - ${HOME}/.claude:/home/cchv/.claude:ro
       - ${HOME}/.codex:/home/cchv/.codex:ro
       - ${HOME}/.local/share/opencode:/home/cchv/.local/share/opencode:ro
+      # RooCode / Cline storage. This host uses VS Code Insiders as a WSL server,
+      # so globalStorage lives under ~/.vscode-server-insiders, not Windows AppData.
+      - ${HOME}/.vscode-server-insiders/data/User/globalStorage:/home/cchv/.config/Code - Insiders/User/globalStorage:ro
+    # No auth: local-only access. The new auth system refuses a bare --no-auth on a
+    # non-loopback bind, and the image's ENTRYPOINT pins --host 0.0.0.0 (required for
+    # Docker port forwarding), so --allow-unsafe-no-auth is needed to opt in. Access
+    # stays local because the port above is bound to 127.0.0.1.
+    command: ["--port", "3727", "--no-auth", "--allow-unsafe-no-auth"]
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
