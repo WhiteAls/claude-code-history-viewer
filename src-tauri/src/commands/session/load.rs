@@ -804,6 +804,46 @@ fn is_genuine_user_text(text: &str) -> bool {
     true
 }
 
+/// Normalize `queue-operation` entries on a line-ordered message slice.
+///
+/// Queue entries carry no `uuid`/`parentUuid`, so the frontend tree builder would
+/// treat them as roots and float them out of place. Two fixes, in one sequential
+/// pass so we have access to the preceding message:
+///   1. Thread each queue entry onto the previous message (inline placement).
+///   2. Promote a genuinely typed queued prompt (`enqueue` + plain user text) to a
+///      real `user` message so it is always shown. Automated enqueues
+///      (e.g. `<task-notification>`) and bookkeeping ops (remove/dequeue/popAll)
+///      stay `queue-operation`, gated by the frontend "show system messages" toggle.
+///
+/// Only entries that were originally `queue-operation` are touched, so genuine
+/// conversation roots (e.g. the first user message, post-compact roots) are safe.
+fn normalize_queue_entries(messages: &mut [ClaudeMessage]) {
+    for i in 0..messages.len() {
+        if messages[i].message_type != "queue-operation" {
+            continue;
+        }
+
+        let prev_uuid = i.checked_sub(1).map(|p| messages[p].uuid.clone());
+        let entry = &mut messages[i];
+
+        if entry.parent_uuid.is_none() {
+            entry.parent_uuid = prev_uuid;
+        }
+
+        let is_user_prompt = entry.operation.as_deref() == Some("enqueue")
+            && entry
+                .content
+                .as_ref()
+                .and_then(|c| c.as_str())
+                .is_some_and(is_genuine_user_text);
+        if is_user_prompt {
+            entry.message_type = "user".to_string();
+            entry.role = Some("user".to_string());
+            entry.operation = None;
+        }
+    }
+}
+
 fn truncate_text(text: &str, max_chars: usize) -> String {
     if text.chars().count() > max_chars {
         let truncated: String = text.chars().take(max_chars).collect();
@@ -1954,6 +1994,10 @@ fn load_all_messages_from_file(session_path: &Path) -> Result<Vec<ClaudeMessage>
 
             parse_line_simd(line_num, &mut line_bytes, false)
                 .filter(|msg| {
+                    // Keep queue-operation; normalize_queue_entries promotes/threads it.
+                    if msg.message_type == "queue-operation" {
+                        return true;
+                    }
                     if is_system_message_type(&msg.message_type) {
                         return false;
                     }
@@ -1968,7 +2012,9 @@ fn load_all_messages_from_file(session_path: &Path) -> Result<Vec<ClaudeMessage>
 
     // Sort by line number to maintain original order
     messages.sort_by_key(|(line_num, _)| *line_num);
-    Ok(messages.into_iter().map(|(_, msg)| msg).collect())
+    let mut messages: Vec<ClaudeMessage> = messages.into_iter().map(|(_, msg)| msg).collect();
+    normalize_queue_entries(&mut messages);
+    Ok(messages)
 }
 
 // ============================================================================
@@ -2215,6 +2261,12 @@ fn is_viewer_visible_line(
     if message_type == "summary" {
         return false;
     }
+    // Queue entries are loaded (not treated as excluded noise): genuine queued
+    // prompts become user messages and service ops are gated by the frontend
+    // "show system messages" toggle. See `normalize_queue_entries`.
+    if message_type == "queue-operation" {
+        return true;
+    }
     if is_system_message_type(message_type) {
         return false;
     }
@@ -2420,7 +2472,7 @@ pub async fn load_session_messages_paginated(
     let exclude = exclude_sidechain.unwrap_or(false);
     let chain = super::chain::resolve_session_chain(Path::new(&session_path));
 
-    let page = if chain.len() <= 1 {
+    let mut page = if chain.len() <= 1 {
         // Common case: no cross-file continuation. Same algorithm and
         // performance characteristics as before this feature existed.
         let (messages, total_count, _) =
@@ -2488,6 +2540,7 @@ pub async fn load_session_messages_paginated(
             next_offset,
         }
     };
+    normalize_queue_entries(&mut page.messages);
 
     #[cfg(debug_assertions)]
     {
