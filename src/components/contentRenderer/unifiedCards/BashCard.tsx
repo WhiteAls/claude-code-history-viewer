@@ -34,18 +34,23 @@ export const BashCard = memo(function BashCard({ toolUse, toolResults }: Props) 
         icon={<ToolIcon toolName="Bash" className={cn(layout.iconSize, styles.icon)} />}
         titleClassName={styles.title}
         rightContent={
-          <div className={cn("flex items-center gap-2", layout.smallText)}>
+          <div className={cn("flex items-center gap-2 min-w-0", layout.smallText)}>
+            {description && (
+              <span
+                className="hidden sm:block truncate max-w-[320px] text-muted-foreground"
+                title={description}
+              >
+                {description}
+              </span>
+            )}
             {timeout != null && (
-              <span className="text-muted-foreground">{(timeout / 1000).toFixed(0)}s</span>
+              <span className="text-muted-foreground shrink-0">{(timeout / 1000).toFixed(0)}s</span>
             )}
             <StatusBadge results={toolResults} />
           </div>
         }
       />
       <Renderer.Content>
-        {description && (
-          <div className={cn(layout.smallText, "text-muted-foreground mb-2")}>{description}</div>
-        )}
         <pre className={cn(layout.monoText, "p-2 bg-zinc-800 dark:bg-zinc-900 text-zinc-100 rounded overflow-x-auto whitespace-pre-wrap")}>
           {command}
         </pre>

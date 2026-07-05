@@ -20,7 +20,9 @@ import {
   AgentProgressGroupRenderer,
   FileHistorySnapshotRenderer,
   SystemMessageRenderer,
+  QueueOperationRenderer,
 } from "../../messageRenderer";
+import type { QueueOperationType } from "../../../types";
 import { AgentTaskGroupRenderer, TaskOperationGroupRenderer } from "../../toolResultRenderer";
 import { extractClaudeMessageContent } from "../../../utils/messageUtils";
 import { isEmptyMessage } from "../helpers/messageHelpers";
@@ -363,6 +365,35 @@ export const ClaudeMessageNode = React.memo(({
               compactMetadata={message.compactMetadata}
               microcompactMetadata={message.microcompactMetadata}
               expandKey={message.uuid}
+            />
+          </div>
+        </div>
+      </ExpandKeyProvider>
+    );
+  }
+
+  // Queue operations (service entries: enqueued task-notifications, remove/dequeue/popAll).
+  // Genuine queued user prompts are promoted to `user` by the backend and never reach here.
+  if (message.type === "queue-operation") {
+    const queueContent =
+      typeof message.content === "string" ? message.content : undefined;
+    return (
+      <ExpandKeyProvider value={message.uuid}>
+        <div
+          data-message-uuid={message.uuid}
+          onClick={handleSelectionClick}
+          className={cn(
+            "relative w-full px-2 md:px-4 py-1 transition-all duration-200",
+            isCaptureMode && !isSelected && CAPTURE_HOVER_BG,
+            selectionHighlight,
+            selectionCursor
+          )}
+        >
+          {CaptureHideButton}
+          <div className="max-w-4xl mx-auto">
+            <QueueOperationRenderer
+              operation={(message.operation ?? "enqueue") as QueueOperationType}
+              content={queueContent}
             />
           </div>
         </div>
