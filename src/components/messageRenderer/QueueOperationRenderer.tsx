@@ -100,10 +100,10 @@ export const QueueOperationRenderer = memo(function QueueOperationRenderer({
         {getOperationDescription(operation)}
       </div>
 
-      {/* Content Preview */}
+      {/* Content */}
       {content && (
-        <div className="mt-1.5 bg-secondary/50 rounded p-1.5 font-mono text-foreground truncate">
-          {content.length > 100 ? `${content.slice(0, 100)}...` : content}
+        <div className="mt-1.5 bg-secondary/50 rounded p-1.5 font-mono text-foreground whitespace-pre-wrap break-words">
+          {content}
         </div>
       )}
     </div>
