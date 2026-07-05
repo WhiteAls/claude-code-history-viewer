@@ -783,6 +783,76 @@ fn open_db(base_path: &str) -> Option<Connection> {
     Some(conn)
 }
 
+/// Infer a project's real worktree for legacy/global projects whose manifest
+/// reports an empty or `/` worktree. Returns `None` for normal projects (so the
+/// caller keeps the original worktree) or when the directory can't be inferred
+/// unambiguously. Prefers `SQLite` session rows, then falls back to JSON manifests.
+fn infer_project_worktree(base_path: &str, project_id: &str, worktree: &str) -> Option<String> {
+    if !worktree.is_empty() && worktree != "/" {
+        return None;
+    }
+
+    infer_project_directory_from_db(base_path, project_id)
+        .or_else(|| infer_project_directory_from_json(base_path, project_id))
+}
+
+fn infer_project_directory_from_db(base_path: &str, project_id: &str) -> Option<String> {
+    let conn = open_db(base_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT directory
+             FROM session
+             WHERE project_id = ?1 AND directory != '' AND directory != '/'",
+        )
+        .ok()?;
+
+    let dirs: Vec<String> = stmt
+        .query_map([project_id], |row| row.get::<_, String>(0))
+        .ok()?
+        .filter_map(std::result::Result::ok)
+        .collect();
+
+    if dirs.len() == 1 {
+        dirs.into_iter().next()
+    } else {
+        None
+    }
+}
+
+fn infer_project_directory_from_json(base_path: &str, project_id: &str) -> Option<String> {
+    let sessions_dir = Path::new(base_path).join("storage").join("session").join(project_id);
+    if !is_non_symlink_dir(&sessions_dir) {
+        return None;
+    }
+
+    let mut dirs: HashSet<String> = HashSet::new();
+
+    for entry in fs::read_dir(&sessions_dir).ok()?.flatten() {
+        if entry.file_type().map_or(true, |ft| ft.is_symlink()) {
+            continue;
+        }
+
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+
+        let content = fs::read_to_string(&path).ok()?;
+        let val: Value = serde_json::from_str(&content).ok()?;
+        if let Some(directory) = val.get("directory").and_then(Value::as_str) {
+            if !directory.is_empty() && directory != "/" {
+                dirs.insert(directory.to_string());
+            }
+        }
+    }
+
+    if dirs.len() == 1 {
+        dirs.into_iter().next()
+    } else {
+        None
+    }
+}
+
 fn scan_projects_from_db(base_path: &str) -> Option<Vec<ClaudeProject>> {
     let conn = open_db(base_path)?;
     let mut stmt = conn
@@ -819,14 +889,20 @@ fn scan_projects_from_db(base_path: &str) -> Option<Vec<ClaudeProject>> {
             }
         }
 
+        // Legacy/global projects report an empty or `/` worktree; infer the
+        // real directory from their sessions so they don't show as "unknown".
+        let resolved_worktree =
+            infer_project_worktree(base_path, &project.id, &project.worktree)
+                .unwrap_or_else(|| project.worktree.clone());
+
         let project_name =
-            opencode_project_display_name(project.name.as_deref(), &project.worktree);
+            opencode_project_display_name(project.name.as_deref(), &resolved_worktree);
         let last_modified = epoch_ms_to_rfc3339(project.time_updated.max(project.time_created));
 
         projects.push(ClaudeProject {
             name: project_name,
             path: format!("opencode://{}", project.id),
-            actual_path: project.worktree,
+            actual_path: resolved_worktree,
             session_count: project.session_count,
             message_count: 0,
             last_modified,
