@@ -227,15 +227,16 @@ describe("StringRenderer ANSI rendering", () => {
     expect(monoDiv).toBeInTheDocument();
   });
 
-  it("falls through to markdown for plain text without ANSI", () => {
+  it("renders plain text without ANSI as pre-wrapped text, not markdown", () => {
     const { container } = render(
-      <StringRenderer result="Just plain text" />
+      <StringRenderer result={"line 1\nline 2"} />
     );
     expandRenderer(container);
-    // The AnsiText mono wrapper should NOT be present for non-ANSI text
-    // (markdown rendering path instead)
-    expect(container.textContent).toContain("Just plain text");
-    expect(container.querySelector("[class*='whitespace-pre-wrap']")).not.toBeInTheDocument();
+    // Newlines must survive: plain output is not routed through markdown,
+    // which would collapse single line breaks into one paragraph.
+    expect(container.querySelector("[class*='whitespace-pre-wrap']")).toBeInTheDocument();
+    expect(container.textContent).toContain("line 1\nline 2");
+    expect(container.querySelector("p")).not.toBeInTheDocument();
   });
 
   it("renders file tree output in mono block", () => {
