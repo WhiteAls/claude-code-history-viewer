@@ -3,8 +3,6 @@
 import { memo, useEffect } from "react";
 import { Folder, Check, FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Renderer } from "../../shared/RendererHeader";
 import { layout } from "@/components/renderers";
 import { cn } from "@/lib/utils";
@@ -79,10 +77,8 @@ export const StringRenderer = memo(function StringRenderer({ result, searchQuery
               <AnsiText text={displayResult} />
             </div>
           ) : (
-            <div className={`p-3 ${layout.prose}`}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-                {displayResult}
-              </ReactMarkdown>
+            <div className={`p-3 text-foreground whitespace-pre-wrap overflow-x-auto ${layout.monoText}`}>
+              {displayResult}
             </div>
           )}
           {shouldCollapse && !isExpanded && (

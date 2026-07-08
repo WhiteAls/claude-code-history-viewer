@@ -289,10 +289,8 @@ export const ClaudeToolResultItem = memo(function ClaudeToolResultItem({
         )}
         <div className={layout.bodyText}>
           {typeof content === "string" ? (
-            <div className={layout.prose}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-                {content}
-              </ReactMarkdown>
+            <div className={cn("text-foreground whitespace-pre-wrap overflow-x-auto", layout.monoText)}>
+              {content}
             </div>
           ) : Array.isArray(content) ? (
             <div className="space-y-2">
